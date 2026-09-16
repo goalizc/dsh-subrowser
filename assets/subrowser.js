@@ -23,6 +23,24 @@
       style.textContent = cssText
       document.head.appendChild(style)
     }
+    // 内联 SVG 图标（currentColor 着色，flex 居中精确，替代文字字符）
+    var ICON_PATHS = {
+      // 加号（dock 新建按钮）
+      plus: '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      // chevron：向下 = 地址栏展开（可折叠），向上 = 已折叠（可展开）
+      fold: '<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+      unfold: '<path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+      // 最小化：横线
+      minimize: '<path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      // 关闭：X
+      close: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    }
+    function sbIcon(name) {
+      var span = document.createElement('span')
+      span.className = 'sbr-ico'
+      span.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>'
+      return span
+    }
     function clampWindow(state) {
       var vw = window.innerWidth
       var vh = window.innerHeight
@@ -33,7 +51,7 @@
       state.w = w; state.h = h; state.x = x; state.y = y
       return state
     }
-    return { sbEl: sbEl, sbCss: sbCss, clampWindow: clampWindow }
+    return { sbEl: sbEl, sbCss: sbCss, sbIcon: sbIcon, clampWindow: clampWindow }
   })()
 
   // —— SB.window：单个浏览器窗口 ——
@@ -105,17 +123,24 @@
         }
       })
       var barBtns = SB.util.sbEl('div', 'sbr-bar-btns', bar)
-      var btnHide = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '▁')
-      btnHide.title = '折叠地址栏'
+      var btnHide = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
+      var hideIcon = SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold')
+      btnHide.appendChild(hideIcon)
+      btnHide.title = state.addrHidden ? '展开地址栏' : '折叠地址栏'
       btnHide.addEventListener('click', function () {
         state.addrHidden = !state.addrHidden
         el.classList.toggle('sbr-addr-hidden', state.addrHidden)
+        btnHide.innerHTML = ''
+        btnHide.appendChild(SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold'))
+        btnHide.title = state.addrHidden ? '展开地址栏' : '折叠地址栏'
         SB.manager.save()
       })
-      var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '—')
+      var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
+      btnMin.appendChild(SB.util.sbIcon('minimize'))
       btnMin.title = '最小化'
       btnMin.addEventListener('click', function () { win.setMinimized(true) })
-      var btnClose = SB.util.sbEl('button', 'sbr-bar-btn sbr-close', barBtns, '✕')
+      var btnClose = SB.util.sbEl('button', 'sbr-bar-btn sbr-close', barBtns)
+      btnClose.appendChild(SB.util.sbIcon('close'))
       btnClose.title = '关闭'
       btnClose.addEventListener('click', function () { SB.manager.closeWin(win) })
 
@@ -317,7 +342,8 @@
 
     function init() {
       rootEl = SB.util.sbEl('div', 'sbr-dock')
-      plusBtn = SB.util.sbEl('button', 'sbr-dock-btn', rootEl, '+')
+      plusBtn = SB.util.sbEl('button', 'sbr-dock-btn', rootEl)
+      plusBtn.appendChild(SB.util.sbIcon('plus'))
       plusBtn.title = '新建子浏览器'
       plusBtn.addEventListener('click', function () {
         SB.manager.newWindow()
@@ -419,11 +445,15 @@
         '.sbr-dot-1{background:#ff5f57}.sbr-dot-2{background:#febc2e}.sbr-dot-3{background:#28c840}',
         '.sbr-addr{flex:1 1 auto;min-width:60px;height:24px;border:0;border-radius:6px;padding:0 8px;background:rgba(0,0,0,.28);color:#f9fafb;font-size:12px;outline:none;box-sizing:border-box}',
         '.sbr-addr.sbr-err{border:1px solid #ff5f57}',
-        '.sbr-win.sbr-addr-hidden .sbr-addr{display:none}',
-        '.sbr-bar-btns{display:flex;gap:4px;flex:0 0 auto}',
-        '.sbr-bar-btn{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#cfcfe0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease}',
+        // 折叠地址栏：用 visibility 隐藏而非 display:none，保留 flex 占位，
+        // 右侧按钮区位置不随之移动（问题：display:none 会让按钮左移）
+        '.sbr-win.sbr-addr-hidden .sbr-addr{visibility:hidden}',
+        '.sbr-bar-btns{display:flex;gap:4px;flex:0 0 auto;align-items:center}',
+        '.sbr-bar-btn{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#cfcfe0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;padding:0}',
         '.sbr-bar-btn:hover{background:rgba(255,255,255,.14)}',
         '.sbr-bar-btn.sbr-close:hover{background:#ff5f57;color:#fff}',
+        '.sbr-ico{display:inline-flex;align-items:center;justify-content:center;pointer-events:none}',
+        '.sbr-ico svg{display:block;width:14px;height:14px}',
         '.sbr-body{flex:1 1 auto;position:relative;background:#151517;overflow:hidden}',
         '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517}',
         '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#151517;color:#e8e8f0;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
