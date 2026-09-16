@@ -182,6 +182,8 @@
       // 空白窗口提示
       if (!state.url) {
         showOverlay('在上方输入网址，回车加载。')
+        // 空白新窗口：自动聚焦地址栏，便于直接输入网址
+        addr.focus()
       }
 
       position()
