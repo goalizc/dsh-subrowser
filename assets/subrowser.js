@@ -182,14 +182,14 @@
       // 空白窗口提示
       if (!state.url) {
         showOverlay('在上方输入网址，回车加载。')
-        // 空白新窗口：自动聚焦地址栏，便于直接输入网址
-        addr.focus()
       }
 
       position()
       if (state.addrHidden) el.classList.add('sbr-addr-hidden')
       document.body.appendChild(el)
       if (state.minimized) el.style.display = 'none'
+      // 空白新窗口：自动聚焦地址栏（必须在挂载到 DOM 之后，否则 focus 是空操作）
+      if (!state.url && !state.minimized) addr.focus()
 
       return win
     }
