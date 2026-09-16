@@ -430,7 +430,7 @@
           url: typeof rec.url === 'string' ? rec.url : '',
           x: Number(rec.x), y: Number(rec.y),
           w: Number(rec.w), h: Number(rec.h),
-          minimized: !!rec.minimized,
+          minimized: false, // 设计文档 6.2：刷新一律显示
           addrHidden: !!rec.addrHidden,
         })
         wins.push(win)
