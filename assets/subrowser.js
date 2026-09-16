@@ -112,14 +112,6 @@
         el.classList.toggle('sbr-addr-hidden', state.addrHidden)
         SB.manager.save()
       })
-      // 常驻「外部打开」按钮：X-Frame-Options / CSP frame-ancestors 拒绝内嵌的站点
-      // （Google、Baidu 等）在 iframe 中只会触发 load 而非 error，跨域无法检测，
-      // 因此标题栏提供常驻入口，点击后在新标签页打开当前地址作为兜底
-      var btnExt = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '↗')
-      btnExt.title = '外部打开'
-      btnExt.addEventListener('click', function () {
-        if (state.url) window.open(state.url, '_blank', 'noopener')
-      })
       var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '—')
       btnMin.title = '最小化'
       btnMin.addEventListener('click', function () { win.setMinimized(true) })
@@ -132,26 +124,30 @@
       frame.setAttribute('allow', 'clipboard-write; clipboard-read; fullscreen; autoplay')
       var overlay = SB.util.sbEl('div', 'sbr-overlay', body)
       var ovText = SB.util.sbEl('div', '', overlay, '')
-      var ovLink = SB.util.sbEl('a', '', overlay, '外部打开')
-      ovLink.addEventListener('click', function () {
-        if (state.url) window.open(state.url, '_blank', 'noopener')
-      })
+      function showOverlay(msg) {
+        ovText.textContent = msg
+        overlay.classList.add('sbr-show')
+      }
 
       // —— 缩放句柄（Task 4 挂拖拽逻辑）——
       ;['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(function (dir) {
         SB.util.sbEl('div', 'sbr-' + dir, el)
       })
 
-      // —— 拖拽：按住标题栏圆点区移动 ——
+      // —— 拖拽：按住标题栏空白区（非地址栏/按钮）移动窗口 ——
       var dragStart = null
-      dots.addEventListener('pointerdown', function (ev) {
+      function isInteractive(target) {
+        return !!(target && (target === addr || target.closest('.sbr-bar-btns')))
+      }
+      bar.addEventListener('pointerdown', function (ev) {
+        if (isInteractive(ev.target)) return
         dragStart = { px: ev.clientX, py: ev.clientY, sx: state.x, sy: state.y }
-        dots.setPointerCapture(ev.pointerId)
-        dots.classList.add('sbr-dragging')
+        bar.setPointerCapture(ev.pointerId)
+        bar.classList.add('sbr-dragging')
         win.focus()
         ev.preventDefault()
       })
-      dots.addEventListener('pointermove', function (ev) {
+      bar.addEventListener('pointermove', function (ev) {
         if (!dragStart) return
         var nx = dragStart.sx + (ev.clientX - dragStart.px)
         var ny = dragStart.sy + (ev.clientY - dragStart.py)
@@ -163,16 +159,19 @@
       function endDrag(ev) {
         if (!dragStart) return
         dragStart = null
-        dots.classList.remove('sbr-dragging')
+        bar.classList.remove('sbr-dragging')
         SB.manager.save()
       }
-      dots.addEventListener('pointerup', endDrag)
-      dots.addEventListener('pointercancel', endDrag)
+      bar.addEventListener('pointerup', endDrag)
+      bar.addEventListener('pointercancel', endDrag)
 
       // —— 缩放：8 个方向句柄 ——
+      // handles 表用「边方向」字母：w=左边缘、e=右边缘、n=上边缘、s=下边缘。
+      // 与下方分支检查（indexOf('w'/'e'/'n'/'s')）一一对应；此前误用 x/y/w/h 属性
+      // 字母导致方向错乱（如 se 只触发左边缘反向缩放、高度不动），此处为修复根因。
       var handles = {
-        nw: ['x', 'y', 'w', 'h'], n: ['y', 'h'], ne: ['y', 'h', 'w'],
-        e: ['w'], se: ['w', 'h'], s: ['h'], sw: ['h', 'w'], w: ['w'],
+        nw: ['w', 'n'], n: ['n'], ne: ['e', 'n'],
+        e: ['e'], se: ['e', 's'], s: ['s'], sw: ['w', 's'], w: ['w'],
       }
       el.querySelectorAll('[class^="sbr-"]').forEach(function (h) {
         var dir = h.className.replace('sbr-', '')
@@ -270,15 +269,10 @@
         win.focus()
       }, true)
 
-      // iframe 加载失败提示（load 事件仍会触发，用跨域访问检测不可行；
-      // 简单策略：onerror + sandbox 时给用户提示入口，最终由用户外部打开兜底）
+      // iframe 加载失败提示（load 事件仍会触发，用跨域访问检测不可行）
       frame.addEventListener('error', function () {
         showOverlay('该站点不允许内嵌或加载失败。')
       })
-      function showOverlay(msg) {
-        ovText.textContent = msg
-        overlay.classList.add('sbr-show')
-      }
       // 空白窗口提示
       if (!state.url) {
         showOverlay('在上方输入网址，回车加载。')
@@ -297,11 +291,29 @@
     return { create: create, normalizeUrl: normalizeUrl }
   })()
 
-  // —— SB.dock：右侧居中图标栏 ——
+  // —— SB.dock：右侧居中图标栏（可上下拖动，窗口图标用网页 favicon）——
   SB.dock = (function () {
     var rootEl = null
     var plusBtn = null
     var listEl = null
+    // 默认图标：内联 SVG 浏览器小图标（未加载网页 / 无 favicon 时使用）
+    var DEFAULT_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+      '<rect x="3" y="6" width="26" height="20" rx="3" fill="none" stroke="%23c9c9d6" stroke-width="2"/>' +
+      '<circle cx="8" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<circle cx="13" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<circle cx="18" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<path d="M6 17h20v2H6zM6 21h13v2H6z" fill="%23c9c9d6"/></svg>'
+    )
+
+    // 由窗口 URL 取 favicon 地址（https://host/favicon.ico）；无 URL 返回空串
+    function faviconUrl(url) {
+      try {
+        var u = new URL(url)
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
+        return u.protocol + '//' + u.hostname + '/favicon.ico'
+      } catch (err) { return '' }
+    }
 
     function init() {
       rootEl = SB.util.sbEl('div', 'sbr-dock')
@@ -312,8 +324,41 @@
       })
       SB.util.sbEl('div', 'sbr-dock-sep', rootEl)
       listEl = SB.util.sbEl('div', 'sbr-dock-list', rootEl)
-      listEl.style.cssText = 'display:flex;flex-direction:column;gap:8px;align-items:center'
       document.body.appendChild(rootEl)
+      // 恢复上次拖动的垂直位置（如有）
+      SB.manager.dockY(function (y) {
+        if (typeof y === 'number') setTop(y)
+      })
+      // —— 上下拖动图标栏（按住非按钮/图标区域）——
+      var dStart = null
+      rootEl.addEventListener('pointerdown', function (ev) {
+        if (ev.target.closest('.sbr-dock-btn, .sbr-dock-ico')) return
+        dStart = { py: ev.clientY, sy: rootEl.getBoundingClientRect().top }
+        rootEl.setPointerCapture(ev.pointerId)
+        rootEl.classList.add('sbr-dragging')
+        ev.preventDefault()
+      })
+      rootEl.addEventListener('pointermove', function (ev) {
+        if (!dStart) return
+        var ny = dStart.sy + (ev.clientY - dStart.py)
+        setTop(ny)
+      })
+      function endDockDrag(ev) {
+        if (!dStart) return
+        dStart = null
+        rootEl.classList.remove('sbr-dragging')
+        SB.manager.saveDockY(rootEl.getBoundingClientRect().top)
+      }
+      rootEl.addEventListener('pointerup', endDockDrag)
+      rootEl.addEventListener('pointercancel', endDockDrag)
+    }
+
+    // 设置图标栏 top 并约束在视口内（垂直拖拽：不改变宽度，仅改 top）
+    function setTop(y) {
+      var maxY = Math.max(0, window.innerHeight - rootEl.offsetHeight)
+      var top = Math.max(0, Math.min(y, maxY))
+      rootEl.style.top = top + 'px'
+      rootEl.style.transform = 'none'
     }
 
     function refresh() {
@@ -321,8 +366,17 @@
       while (listEl.firstChild) listEl.removeChild(listEl.firstChild)
       var wins = SB.manager.windows()
       wins.forEach(function (win) {
-        var ico = SB.util.sbEl('div', 'sbr-dock-ico', listEl, win.label() || '·')
+        var ico = SB.util.sbEl('div', 'sbr-dock-ico', listEl)
         ico.title = win.url() || '空白'
+        // favicon 图标（居中显示）；无 URL 或加载失败回退默认图标
+        var img = SB.util.sbEl('img', 'sbr-dock-fav', ico)
+        var fav = faviconUrl(win.url())
+        img.src = fav || DEFAULT_ICON
+        if (fav) {
+          img.addEventListener('error', function () {
+            img.src = DEFAULT_ICON
+          })
+        }
         if (!win.minimized()) ico.classList.add('sbr-active')
         ico.addEventListener('click', function () {
           SB.manager.toggleWin(win)
@@ -344,33 +398,36 @@
 
     function init() {
       SB.util.sbCss([
-        // —— 右侧图标栏 ——
-        '.sbr-dock{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9998;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 6px;border-radius:10px 0 0 10px;background:rgba(30,30,40,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:-2px 0 8px rgba(0,0,0,.18);user-select:none;-webkit-user-select:none}',
-        '.sbr-dock-btn{width:34px;height:34px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease}',
+        // —— 右侧图标栏（深色主题，与 DSH 一致；可上下拖动）——
+        '.sbr-dock{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9998;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 6px;border-radius:10px 0 0 10px;background:rgba(21,21,23,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:-2px 0 8px rgba(0,0,0,.3);user-select:none;-webkit-user-select:none;cursor:grab;touch-action:none;transition:background .15s ease}',
+        '.sbr-dock.sbr-dragging{cursor:grabbing}',
+        '.sbr-dock-btn{width:34px;height:34px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#f9fafb;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;flex:0 0 auto}',
         '.sbr-dock-btn:hover{background:rgba(255,255,255,.22)}',
-        '.sbr-dock-sep{width:20px;height:1px;background:rgba(255,255,255,.18);margin:2px 0}',
-        '.sbr-dock-ico{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.10);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}',
+        '.sbr-dock-sep{width:20px;height:1px;background:rgba(255,255,255,.18);margin:2px 0;flex:0 0 auto}',
+        '.sbr-dock-list{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;flex:1 1 auto}',
+        '.sbr-dock-ico{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.10);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;overflow:hidden;flex:0 0 auto}',
         '.sbr-dock-ico.sbr-active{background:rgba(64,156,255,.45)}',
         '.sbr-dock-ico:hover{background:rgba(255,255,255,.20)}',
-        // —— 浏览器窗口 ——
-        '.sbr-win{position:fixed;z-index:9990;min-width:240px;min-height:180px;display:flex;flex-direction:column;border-radius:10px;background:#1e1e28;border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.35);overflow:hidden;font-family:inherit}',
+        '.sbr-dock-fav{width:22px;height:22px;object-fit:contain;display:block;pointer-events:none;-webkit-user-drag:none}',
+        // —— 浏览器窗口（深色主题，与 DSH 一致）——
+        '.sbr-win{position:fixed;z-index:9990;min-width:240px;min-height:180px;display:flex;flex-direction:column;border-radius:10px;background:#151517;border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden;font-family:inherit}',
         '.sbr-win.sbr-top{z-index:9997}',
-        '.sbr-bar{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(255,255,255,.06);cursor:default;user-select:none;-webkit-user-select:none;touch-action:none;position:relative;z-index:2}',
-        '.sbr-bar-dots{display:flex;gap:4px;padding:0 2px;cursor:grab;touch-action:none}',
+        '.sbr-bar{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(255,255,255,.06);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;position:relative;z-index:2}',
+        '.sbr-bar.sbr-dragging{cursor:grabbing}',
+        '.sbr-bar-dots{display:flex;gap:4px;padding:0 2px;pointer-events:none}',
         '.sbr-dot{width:10px;height:10px;border-radius:50%}',
         '.sbr-dot-1{background:#ff5f57}.sbr-dot-2{background:#febc2e}.sbr-dot-3{background:#28c840}',
-        '.sbr-addr{flex:1 1 auto;min-width:60px;height:24px;border:0;border-radius:6px;padding:0 8px;background:rgba(0,0,0,.28);color:#e8e8f0;font-size:12px;outline:none;box-sizing:border-box}',
+        '.sbr-addr{flex:1 1 auto;min-width:60px;height:24px;border:0;border-radius:6px;padding:0 8px;background:rgba(0,0,0,.28);color:#f9fafb;font-size:12px;outline:none;box-sizing:border-box}',
         '.sbr-addr.sbr-err{border:1px solid #ff5f57}',
         '.sbr-win.sbr-addr-hidden .sbr-addr{display:none}',
         '.sbr-bar-btns{display:flex;gap:4px;flex:0 0 auto}',
         '.sbr-bar-btn{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#cfcfe0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease}',
         '.sbr-bar-btn:hover{background:rgba(255,255,255,.14)}',
         '.sbr-bar-btn.sbr-close:hover{background:#ff5f57;color:#fff}',
-        '.sbr-body{flex:1 1 auto;position:relative;background:#fff;overflow:hidden}',
-        '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}',
-        '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#fff;color:#333;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
+        '.sbr-body{flex:1 1 auto;position:relative;background:#151517;overflow:hidden}',
+        '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517}',
+        '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#151517;color:#e8e8f0;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
         '.sbr-overlay.sbr-show{display:flex}',
-        '.sbr-overlay a{color:#1a73e8;cursor:pointer;text-decoration:underline}',
         // 缩放句柄（位于窗口内部边缘，避免被 .sbr-win 的 overflow:hidden 裁剪；
         // z-index:1 低于标题栏的 2，保证标题栏按钮/圆点可点）
         '.sbr-nw,.sbr-n,.sbr-ne,.sbr-e,.sbr-se,.sbr-s,.sbr-sw,.sbr-w{position:absolute;z-index:1}',
@@ -378,8 +435,8 @@
         '.sbr-e{top:12px;right:0;bottom:12px;width:6px;cursor:ew-resize}.sbr-se{bottom:0;right:0;width:12px;height:12px;cursor:nwse-resize}.sbr-s{bottom:0;left:12px;right:12px;height:6px;cursor:ns-resize}',
         '.sbr-sw{bottom:0;left:0;width:12px;height:12px;cursor:nesw-resize}.sbr-w{top:12px;left:0;bottom:12px;width:6px;cursor:ew-resize}'
       ].join('\n'))
+      restore()          // 先恢复（含 dockY），再初始化图标栏
       dock.init()
-      restore()
       refresh()
       // Esc 一键全部最小化（iframe 聚焦时跨域无法监听，天然不冲突）
       document.addEventListener('keydown', function (ev) {
@@ -415,9 +472,12 @@
     }
 
     // —— 持久化：防抖 300ms 写 localStorage ——
+    var dockY = null
+    function getDockY(cb) { cb(dockY) }
+    function setDockY(v) { dockY = v }
     function saveNow() {
       try {
-        var data = { v: 1, windows: wins.map(function (w) {
+        var data = { v: 1, dockY: dockY, windows: wins.map(function (w) {
           var s = w.state
           return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, minimized: s.minimized, addrHidden: s.addrHidden }
         }) }
@@ -428,6 +488,7 @@
       if (saveTimer) clearTimeout(saveTimer)
       saveTimer = setTimeout(saveNow, 300)
     }
+    function saveDockY(y) { dockY = y; saveNow() }
 
     // —— 恢复：读取 localStorage 重建窗口（容错，最多 SB.MAX_WINDOWS 个）——
     function restore() {
@@ -437,6 +498,7 @@
         if (raw) {
           var data = JSON.parse(raw)
           if (data && Array.isArray(data.windows)) list = data.windows
+          if (data && typeof data.dockY === 'number') dockY = data.dockY
         }
       } catch (err) {}
       list.slice(0, SB.MAX_WINDOWS).forEach(function (rec) {
@@ -456,6 +518,7 @@
       init: init, windows: windows, refresh: refresh,
       newWindow: newWindow, toggleWin: toggleWin, closeWin: closeWin,
       save: save, restore: restore,
+      dockY: getDockY, setDockY: setDockY, saveDockY: saveDockY,
     }
   })()
 
