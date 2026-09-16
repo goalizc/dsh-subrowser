@@ -508,10 +508,15 @@
       restore()          // 先恢复（含 dockY），再初始化图标栏
       dock.init()
       refresh()
-      // Esc 一键全部最小化（iframe 聚焦时跨域无法监听，天然不冲突）
+      // Esc 全局显隐切换（类似 Win+D）：存在可见窗口 → 全部隐藏；
+      // 全部已隐藏 → 全部恢复显示。图标栏保留。
       document.addEventListener('keydown', function (ev) {
         if (ev.key !== 'Escape') return
-        wins.forEach(function (w) { if (!w.minimized()) w.setMinimized(true) })
+        var anyVisible = wins.some(function (w) { return !w.minimized() })
+        wins.forEach(function (w) {
+          if (anyVisible) w.setMinimized(true)
+          else w.show()
+        })
       })
     }
 
