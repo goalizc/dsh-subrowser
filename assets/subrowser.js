@@ -322,6 +322,7 @@
   SB.manager = (function () {
     var wins = []
     var dock = SB.dock
+    var saveTimer = null
 
     function windows() { return wins.slice() }
     function refresh() { dock.refresh() }
@@ -363,7 +364,13 @@
         '.sbr-sw{bottom:0;left:0;width:12px;height:12px;cursor:nesw-resize}.sbr-w{top:12px;left:0;bottom:12px;width:6px;cursor:ew-resize}'
       ].join('\n'))
       dock.init()
+      restore()
       refresh()
+      // Esc 一键全部最小化（iframe 聚焦时跨域无法监听，天然不冲突）
+      document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Escape') return
+        wins.forEach(function (w) { if (!w.minimized()) w.setMinimized(true) })
+      })
     }
 
     function newWindow(opts) {
@@ -392,13 +399,48 @@
       SB.manager.save()
     }
 
-    // 占位：Task 5 实现
-    function save() {}
+    // —— 持久化：防抖 300ms 写 localStorage ——
+    function saveNow() {
+      try {
+        var data = { v: 1, windows: wins.map(function (w) {
+          var s = w.state
+          return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, minimized: s.minimized, addrHidden: s.addrHidden }
+        }) }
+        localStorage.setItem(SB.STORAGE_KEY, JSON.stringify(data))
+      } catch (err) {}
+    }
+    function save() {
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(saveNow, 300)
+    }
+
+    // —— 恢复：读取 localStorage 重建窗口（容错，最多 SB.MAX_WINDOWS 个）——
+    function restore() {
+      var list = []
+      try {
+        var raw = localStorage.getItem(SB.STORAGE_KEY)
+        if (raw) {
+          var data = JSON.parse(raw)
+          if (data && Array.isArray(data.windows)) list = data.windows
+        }
+      } catch (err) {}
+      list.slice(0, SB.MAX_WINDOWS).forEach(function (rec) {
+        if (!rec || typeof rec !== 'object') return
+        var win = SB.window.create({
+          url: typeof rec.url === 'string' ? rec.url : '',
+          x: Number(rec.x), y: Number(rec.y),
+          w: Number(rec.w), h: Number(rec.h),
+          minimized: !!rec.minimized,
+          addrHidden: !!rec.addrHidden,
+        })
+        wins.push(win)
+      })
+    }
 
     return {
       init: init, windows: windows, refresh: refresh,
       newWindow: newWindow, toggleWin: toggleWin, closeWin: closeWin,
-      save: save,
+      save: save, restore: restore,
     }
   })()
 
