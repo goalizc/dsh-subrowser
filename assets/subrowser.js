@@ -105,6 +105,14 @@
         el.classList.toggle('sbr-addr-hidden', state.addrHidden)
         SB.manager.save()
       })
+      // 常驻「外部打开」按钮：X-Frame-Options / CSP frame-ancestors 拒绝内嵌的站点
+      // （Google、Baidu 等）在 iframe 中只会触发 load 而非 error，跨域无法检测，
+      // 因此标题栏提供常驻入口，点击后在新标签页打开当前地址作为兜底
+      var btnExt = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '↗')
+      btnExt.title = '外部打开'
+      btnExt.addEventListener('click', function () {
+        if (state.url) window.open(state.url, '_blank', 'noopener')
+      })
       var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '—')
       btnMin.title = '最小化'
       btnMin.addEventListener('click', function () { win.setMinimized(true) })
