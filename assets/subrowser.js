@@ -23,7 +23,17 @@
       style.textContent = cssText
       document.head.appendChild(style)
     }
-    return { sbEl: sbEl, sbCss: sbCss }
+    function clampWindow(state) {
+      var vw = window.innerWidth
+      var vh = window.innerHeight
+      var w = Math.max(SB.MIN_W, Math.min(state.w, vw))
+      var h = Math.max(SB.MIN_H, Math.min(state.h, vh))
+      var x = Math.max(0, Math.min(state.x, vw - w))
+      var y = Math.max(0, Math.min(state.y, vh - h))
+      state.w = w; state.h = h; state.x = x; state.y = y
+      return state
+    }
+    return { sbEl: sbEl, sbCss: sbCss, clampWindow: clampWindow }
   })()
 
   // —— SB.window：单个浏览器窗口 ——
@@ -115,6 +125,81 @@
       // —— 缩放句柄（Task 4 挂拖拽逻辑）——
       ;['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(function (dir) {
         SB.util.sbEl('div', 'sbr-' + dir, el)
+      })
+
+      // —— 拖拽：按住标题栏圆点区移动 ——
+      var dragStart = null
+      dots.addEventListener('pointerdown', function (ev) {
+        dragStart = { px: ev.clientX, py: ev.clientY, sx: state.x, sy: state.y }
+        dots.setPointerCapture(ev.pointerId)
+        dots.classList.add('sbr-dragging')
+        win.focus()
+        ev.preventDefault()
+      })
+      dots.addEventListener('pointermove', function (ev) {
+        if (!dragStart) return
+        var nx = dragStart.sx + (ev.clientX - dragStart.px)
+        var ny = dragStart.sy + (ev.clientY - dragStart.py)
+        state.x = nx; state.y = ny
+        SB.util.clampWindow(state)
+        el.style.left = state.x + 'px'
+        el.style.top = state.y + 'px'
+      })
+      function endDrag(ev) {
+        if (!dragStart) return
+        dragStart = null
+        dots.classList.remove('sbr-dragging')
+        SB.manager.save()
+      }
+      dots.addEventListener('pointerup', endDrag)
+      dots.addEventListener('pointercancel', endDrag)
+
+      // —— 缩放：8 个方向句柄 ——
+      var handles = {
+        nw: ['x', 'y', 'w', 'h'], n: ['y', 'h'], ne: ['y', 'h', 'w'],
+        e: ['w'], se: ['w', 'h'], s: ['h'], sw: ['h', 'w'], w: ['w'],
+      }
+      el.querySelectorAll('[class^="sbr-"]').forEach(function (h) {
+        var dir = h.className.replace('sbr-', '')
+        if (!handles[dir]) return
+        var rs = null
+        h.addEventListener('pointerdown', function (ev) {
+          rs = {
+            px: ev.clientX, py: ev.clientY,
+            x: state.x, y: state.y, w: state.w, h: state.h,
+          }
+          h.setPointerCapture(ev.pointerId)
+          win.focus()
+          ev.preventDefault()
+          ev.stopPropagation()
+        })
+        h.addEventListener('pointermove', function (ev) {
+          if (!rs) return
+          var dx = ev.clientX - rs.px
+          var dy = ev.clientY - rs.py
+          var nx = rs.x, ny = rs.y, nw = rs.w, nh = rs.h
+          if (handles[dir].indexOf('w') !== -1) { nw = rs.w - dx; nx = rs.x + dx }
+          if (handles[dir].indexOf('e') !== -1) { nw = rs.w + dx }
+          if (handles[dir].indexOf('n') !== -1) { nh = rs.h - dy; ny = rs.y + dy }
+          if (handles[dir].indexOf('s') !== -1) { nh = rs.h + dy }
+          if (handles[dir].indexOf('w') !== -1 && nw < SB.MIN_W) {
+            nw = SB.MIN_W; nx = rs.x + rs.w - SB.MIN_W
+          }
+          if (handles[dir].indexOf('n') !== -1 && nh < SB.MIN_H) {
+            nh = SB.MIN_H; ny = rs.y + rs.h - SB.MIN_H
+          }
+          state.x = nx; state.y = ny; state.w = nw; state.h = nh
+          SB.util.clampWindow(state)
+          el.style.left = state.x + 'px'; el.style.top = state.y + 'px'
+          el.style.width = state.w + 'px'; el.style.height = state.h + 'px'
+        })
+        function endResize(ev) {
+          if (!rs) return
+          rs = null
+          SB.manager.save()
+        }
+        h.addEventListener('pointerup', endResize)
+        h.addEventListener('pointercancel', endResize)
       })
 
       // —— 方法 ——
