@@ -791,7 +791,9 @@ git commit -m "feat: 窗口拖拽与缩放"
           url: typeof rec.url === 'string' ? rec.url : '',
           x: Number(rec.x), y: Number(rec.y),
           w: Number(rec.w), h: Number(rec.h),
-          minimized: !!rec.minimized,
+          // 设计文档 6.2「刷新后恢复为显示状态（所见即所得）」：不恢复 minimized，
+          // 刷新一律显示。minimized 字段仅用于序列化，恢复时强制显示。
+          minimized: false,
           addrHidden: !!rec.addrHidden,
         })
         wins.push(win)
