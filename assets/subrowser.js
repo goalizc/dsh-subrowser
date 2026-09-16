@@ -508,15 +508,25 @@
       restore()          // 先恢复（含 dockY），再初始化图标栏
       dock.init()
       refresh()
-      // Esc 全局显隐切换（类似 Win+D）：存在可见窗口 → 全部隐藏；
-      // 全部已隐藏 → 全部恢复显示。图标栏保留。
+      // Esc 全局显隐切换（类似 Win+D）：存在可见窗口 → 记录可见性快照后全部隐藏；
+      // 全部已隐藏 → 按快照恢复（仅还原原本显示的窗口，用户手动隐藏的保持隐藏）。
+      // 无快照（如从未全隐过）时全部显示。图标栏保留。
+      var escSnapshot = null
       document.addEventListener('keydown', function (ev) {
         if (ev.key !== 'Escape') return
         var anyVisible = wins.some(function (w) { return !w.minimized() })
-        wins.forEach(function (w) {
-          if (anyVisible) w.setMinimized(true)
-          else w.show()
-        })
+        if (anyVisible) {
+          escSnapshot = wins.map(function (w) { return { win: w, hidden: w.minimized() } })
+          wins.forEach(function (w) { w.setMinimized(true) })
+        } else if (escSnapshot) {
+          escSnapshot.forEach(function (rec) {
+            if (rec.hidden) { if (!rec.win.minimized()) rec.win.setMinimized(true) }
+            else if (rec.win.minimized()) rec.win.show()
+          })
+          escSnapshot = null
+        } else {
+          wins.forEach(function (w) { w.show() })
+        }
       })
     }
 
