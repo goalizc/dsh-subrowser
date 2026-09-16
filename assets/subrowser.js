@@ -34,6 +34,9 @@
       minimize: '<path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
       // 关闭：X
       close: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      // 放大 / 缩小：放大镜 + 加/减号
+      zoom_in: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      zoom_out: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M21 21l-4.35-4.35M8 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
     }
     function sbIcon(name) {
       var span = document.createElement('span')
@@ -81,18 +84,21 @@
 
     function create(opts) {
       opts = opts || {}
-      var defW = opts.w || 720
-      var defH = opts.h || 480
-      // 默认位置：视口居中偏上。x/y 缺失（新建窗口）或非有限数时使用默认，
-      // 避免 position() 输出 'undefinedpx' 无效定位导致窗口落到视口外。
-      var defX = Math.max(0, Math.round((window.innerWidth - defW) / 2))
-      var defY = Math.max(0, Math.round((window.innerHeight - defH) / 3))
+      var defW = opts.w || 400
+      var defH = opts.h || 500
+      // 默认位置：靠右侧垂直居中，避开右侧图标栏（图标栏宽约 46 + 12 间距）。
+      // x/y 缺失（新建窗口）或非有限数时使用默认，避免 position() 输出
+      // 'undefinedpx' 无效定位导致窗口落到视口外。
+      var defX = Math.max(0, Math.round(window.innerWidth - defW - 58))
+      var defY = Math.max(0, Math.round((window.innerHeight - defH) / 2))
       var state = {
         id: makeId(),
         url: opts.url || '',
         x: isFinite(opts.x) ? opts.x : defX,
         y: isFinite(opts.y) ? opts.y : defY,
         w: defW, h: defH,
+        // 内容缩放倍率（1 = 100%），范围 0.5 ~ 2
+        zoom: Math.max(0.5, Math.min(2, isFinite(opts.zoom) ? opts.zoom : 1)),
         minimized: !!opts.minimized,
         addrHidden: !!opts.addrHidden,
       }
@@ -123,6 +129,23 @@
         }
       })
       var barBtns = SB.util.sbEl('div', 'sbr-bar-btns', bar)
+      // 内容缩放控制：iframe 内容按 state.zoom 缩放（0.5x ~ 2x）
+      var btnZoomOut = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
+      btnZoomOut.appendChild(SB.util.sbIcon('zoom_out'))
+      btnZoomOut.title = '缩小内容'
+      btnZoomOut.addEventListener('click', function () {
+        state.zoom = Math.max(0.5, Math.round((state.zoom - 0.1) * 10) / 10)
+        applyZoom()
+        SB.manager.save()
+      })
+      var btnZoomIn = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
+      btnZoomIn.appendChild(SB.util.sbIcon('zoom_in'))
+      btnZoomIn.title = '放大内容'
+      btnZoomIn.addEventListener('click', function () {
+        state.zoom = Math.min(2, Math.round((state.zoom + 0.1) * 10) / 10)
+        applyZoom()
+        SB.manager.save()
+      })
       var btnHide = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
       var hideIcon = SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold')
       btnHide.appendChild(hideIcon)
@@ -153,6 +176,21 @@
         ovText.textContent = msg
         overlay.classList.add('sbr-show')
       }
+
+      // —— 内容缩放：iframe 布局视口 = 容器 / zoom，再 scale(zoom) 填满容器。
+      // 容器 overflow:hidden 裁剪，效果等同浏览器内容缩放（放大文字/图片）。
+      function applyZoom() {
+        var z = state.zoom
+        var cw = body.clientWidth || 1
+        var ch = body.clientHeight || 1
+        frame.style.width = Math.round(cw / z) + 'px'
+        frame.style.height = Math.round(ch / z) + 'px'
+        frame.style.transform = 'scale(' + z + ')'
+        frame.style.transformOrigin = '0 0'
+      }
+      // 窗口被拖拽缩放时 body 尺寸变化，自动跟随重算
+      var bodyObserver = new ResizeObserver(function () { applyZoom() })
+      bodyObserver.observe(body)
 
       // —— 缩放句柄（Task 4 挂拖拽逻辑）——
       ;['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(function (dir) {
@@ -280,6 +318,7 @@
       win.destroy = function () {
         if (el.parentNode) el.parentNode.removeChild(el)
         frame.src = 'about:blank'
+        try { bodyObserver.disconnect() } catch (err) {}
       }
       win.focus = function () {
         var all = SB.manager.windows()
@@ -307,6 +346,7 @@
       if (state.addrHidden) el.classList.add('sbr-addr-hidden')
       document.body.appendChild(el)
       if (state.minimized) el.style.display = 'none'
+      applyZoom() // 初始按 state.zoom 缩放内容
       // 空白新窗口：自动聚焦地址栏（必须在挂载到 DOM 之后，否则 focus 是空操作）
       if (!state.url && !state.minimized) addr.focus()
 
@@ -509,7 +549,7 @@
       try {
         var data = { v: 1, dockY: dockY, windows: wins.map(function (w) {
           var s = w.state
-          return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, minimized: s.minimized, addrHidden: s.addrHidden }
+          return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, zoom: s.zoom, minimized: s.minimized, addrHidden: s.addrHidden }
         }) }
         localStorage.setItem(SB.STORAGE_KEY, JSON.stringify(data))
       } catch (err) {}
@@ -537,6 +577,7 @@
           url: typeof rec.url === 'string' ? rec.url : '',
           x: Number(rec.x), y: Number(rec.y),
           w: Number(rec.w), h: Number(rec.h),
+          zoom: Number(rec.zoom),
           minimized: false, // 设计文档 6.2：刷新一律显示
           addrHidden: !!rec.addrHidden,
         })
