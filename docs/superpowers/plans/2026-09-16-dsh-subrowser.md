@@ -81,7 +81,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Package root: lib/index.js -> package root. Keeps the bundle relocatable.
+// 包根目录：lib/index.js -> 包根。保证 bundle 可搬迁（node_modules 或本地 link 安装皆可）。
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // 前端脚本：按 mtime 判断是否需要重读，避免常驻缓存导致改了不生效。
@@ -251,7 +251,7 @@ git commit -m "feat: 插件骨架与宿主静态路由"
     // —— 浏览器窗口 ——
     '.sbr-win{position:fixed;z-index:9990;min-width:240px;min-height:180px;display:flex;flex-direction:column;border-radius:10px;background:#1e1e28;border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.35);overflow:hidden;font-family:inherit}',
     '.sbr-win.sbr-top{z-index:9997}',
-    '.sbr-bar{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(255,255,255,.06);cursor:default;user-select:none;-webkit-user-select:none;touch-action:none}',
+    '.sbr-bar{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(255,255,255,.06);cursor:default;user-select:none;-webkit-user-select:none;touch-action:none;position:relative;z-index:2}',
     '.sbr-bar-dots{display:flex;gap:4px;padding:0 2px;cursor:grab;touch-action:none}',
     '.sbr-dot{width:10px;height:10px;border-radius:50%}',
     '.sbr-dot-1{background:#ff5f57}.sbr-dot-2{background:#febc2e}.sbr-dot-3{background:#28c840}',
@@ -267,11 +267,12 @@ git commit -m "feat: 插件骨架与宿主静态路由"
     '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#fff;color:#333;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
     '.sbr-overlay.sbr-show{display:flex}',
     '.sbr-overlay a{color:#1a73e8;cursor:pointer;text-decoration:underline}',
-    // 缩放句柄
-    '.sbr-nw,.sbr-n,.sbr-ne,.sbr-e,.br,.sbr-se,.sbr-s,.sbr-sw,.sbr-w{position:absolute;z-index:3}',
-    '.sbr-nw{top:-4px;left:-4px;width:12px;height:12px;cursor:nwse-resize}.sbr-n{top:-4px;left:10px;right:10px;height:8px;cursor:ns-resize}.sbr-ne{top:-4px;right:-4px;width:12px;height:12px;cursor:nesw-resize}',
-    '.sbr-e{top:10px;right:-4px;bottom:10px;width:8px;cursor:ew-resize}.sbr-se{bottom:-4px;right:-4px;width:12px;height:12px;cursor:nwse-resize}.sbr-s{bottom:-4px;left:10px;right:10px;height:8px;cursor:ns-resize}',
-    '.sbr-sw{bottom:-4px;left:-4px;width:12px;height:12px;cursor:nesw-resize}.sbr-w{top:10px;left:-4px;bottom:10px;width:8px;cursor:ew-resize}'
+    // 缩放句柄（位于窗口内部边缘，避免被 .sbr-win 的 overflow:hidden 裁剪；
+    // z-index:1 低于标题栏的 2，保证标题栏按钮/圆点可点）
+    '.sbr-nw,.sbr-n,.sbr-ne,.sbr-e,.sbr-se,.sbr-s,.sbr-sw,.sbr-w{position:absolute;z-index:1}',
+    '.sbr-nw{top:0;left:0;width:12px;height:12px;cursor:nwse-resize}.sbr-n{top:0;left:12px;right:12px;height:6px;cursor:ns-resize}.sbr-ne{top:0;right:0;width:12px;height:12px;cursor:nesw-resize}',
+    '.sbr-e{top:12px;right:0;bottom:12px;width:6px;cursor:ew-resize}.sbr-se{bottom:0;right:0;width:12px;height:12px;cursor:nwse-resize}.sbr-s{bottom:0;left:12px;right:12px;height:6px;cursor:ns-resize}',
+    '.sbr-sw{bottom:0;left:0;width:12px;height:12px;cursor:nesw-resize}.sbr-w{top:12px;left:0;bottom:12px;width:6px;cursor:ew-resize}'
   ].join('\n'))
 ```
 
