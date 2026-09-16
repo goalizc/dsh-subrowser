@@ -495,7 +495,9 @@
         '.sbr-ico{display:inline-flex;align-items:center;justify-content:center;pointer-events:none}',
         '.sbr-ico svg{display:block;width:14px;height:14px}',
         '.sbr-body{flex:1 1 auto;position:relative;background:#151517;overflow:hidden}',
-        '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517}',
+        // color-scheme:dark 使 iframe 内未显式设置样式的滚动条/表单控件
+        // 按暗色渲染（浏览器标准行为，跨域安全，无需访问 iframe 内容）
+        '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517;color-scheme:dark}',
         '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#151517;color:#e8e8f0;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
         '.sbr-overlay.sbr-show{display:flex}',
         // 缩放句柄（位于窗口内部边缘，避免被 .sbr-win 的 overflow:hidden 裁剪；
