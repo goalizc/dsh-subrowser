@@ -26,6 +26,175 @@
     return { sbEl: sbEl, sbCss: sbCss }
   })()
 
+  // —— SB.window：单个浏览器窗口 ——
+  SB.window = (function () {
+    var seq = 0
+
+    function makeId() {
+      seq++
+      return 'w_' + Date.now().toString(36) + '_' + seq
+    }
+
+    function normalizeUrl(input) {
+      var s = (input || '').trim()
+      if (!s) return ''
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s
+      if (/^\/\//.test(s)) return 'https:' + s
+      // 不是协议开头：当作域名补 https
+      return 'https://' + s
+    }
+
+    function labelOf(url) {
+      try {
+        var u = new URL(url)
+        return u.hostname.replace(/^www\./, '')
+      } catch (err) { return '' }
+    }
+
+    function create(opts) {
+      opts = opts || {}
+      var state = {
+        id: makeId(),
+        url: opts.url || '',
+        x: opts.x, y: opts.y,
+        w: opts.w || 720, h: opts.h || 480,
+        minimized: !!opts.minimized,
+        addrHidden: !!opts.addrHidden,
+      }
+      var win = {}
+
+      // —— DOM ——
+      var el = SB.util.sbEl('div', 'sbr-win')
+      var bar = SB.util.sbEl('div', 'sbr-bar', el)
+      var dots = SB.util.sbEl('div', 'sbr-bar-dots', bar)
+      ;['sbr-dot-1', 'sbr-dot-2', 'sbr-dot-3'].forEach(function (c) {
+        SB.util.sbEl('div', 'sbr-dot ' + c, dots)
+      })
+      var addr = SB.util.sbEl('input', 'sbr-addr', bar)
+      addr.type = 'text'
+      addr.placeholder = '输入网址，回车打开'
+      addr.value = state.url
+      addr.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault()
+          var u = normalizeUrl(addr.value)
+          if (!u) return
+          if (!/^https?:\/\//i.test(u)) { addr.classList.add('sbr-err'); return }
+          addr.classList.remove('sbr-err')
+          addr.value = u
+          win.navigate(u)
+        } else if (ev.key === 'Escape') {
+          addr.blur()
+        }
+      })
+      var barBtns = SB.util.sbEl('div', 'sbr-bar-btns', bar)
+      var btnHide = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '▁')
+      btnHide.title = '折叠地址栏'
+      btnHide.addEventListener('click', function () {
+        state.addrHidden = !state.addrHidden
+        el.classList.toggle('sbr-addr-hidden', state.addrHidden)
+        SB.manager.save()
+      })
+      var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns, '—')
+      btnMin.title = '最小化'
+      btnMin.addEventListener('click', function () { win.setMinimized(true) })
+      var btnClose = SB.util.sbEl('button', 'sbr-bar-btn sbr-close', barBtns, '✕')
+      btnClose.title = '关闭'
+      btnClose.addEventListener('click', function () { SB.manager.closeWin(win) })
+
+      var body = SB.util.sbEl('div', 'sbr-body', el)
+      var frame = SB.util.sbEl('iframe', 'sbr-frame', body)
+      frame.setAttribute('allow', 'clipboard-write; clipboard-read; fullscreen; autoplay')
+      var overlay = SB.util.sbEl('div', 'sbr-overlay', body)
+      var ovText = SB.util.sbEl('div', '', overlay, '')
+      var ovLink = SB.util.sbEl('a', '', overlay, '外部打开')
+      ovLink.addEventListener('click', function () {
+        if (state.url) window.open(state.url, '_blank', 'noopener')
+      })
+
+      // —— 缩放句柄（Task 4 挂拖拽逻辑）——
+      ;['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(function (dir) {
+        SB.util.sbEl('div', 'sbr-' + dir, el)
+      })
+
+      // —— 方法 ——
+      function position() {
+        el.style.left = state.x + 'px'
+        el.style.top = state.y + 'px'
+        el.style.width = state.w + 'px'
+        el.style.height = state.h + 'px'
+      }
+      win.el = el
+      win.state = state
+      win.id = state.id
+      win.url = function () { return state.url }
+      win.label = function () { return labelOf(state.url) }
+      win.minimized = function () { return state.minimized }
+
+      win.navigate = function (u) {
+        state.url = u
+        frame.src = u
+        overlay.classList.remove('sbr-show')
+        SB.manager.save()
+        SB.manager.refresh()
+      }
+      win.show = function () {
+        state.minimized = false
+        el.style.display = ''
+        position()
+        win.focus()
+        SB.manager.save()
+        SB.manager.refresh()
+      }
+      win.setMinimized = function (b) {
+        state.minimized = b
+        el.style.display = b ? 'none' : ''
+        if (!b) win.focus()
+        SB.manager.save()
+        SB.manager.refresh()
+      }
+      win.destroy = function () {
+        if (el.parentNode) el.parentNode.removeChild(el)
+        frame.src = 'about:blank'
+      }
+      win.focus = function () {
+        var all = SB.manager.windows()
+        all.forEach(function (w) { w.el.classList.remove('sbr-top') })
+        el.classList.add('sbr-top')
+      }
+      win.focusOnFrame = function () {
+        // 点击窗口内容区聚焦并置顶
+        win.focus()
+      }
+      el.addEventListener('mousedown', function () {
+        win.focus()
+      }, true)
+
+      // iframe 加载失败提示（load 事件仍会触发，用跨域访问检测不可行；
+      // 简单策略：onerror + sandbox 时给用户提示入口，最终由用户外部打开兜底）
+      frame.addEventListener('error', function () {
+        showOverlay('该站点不允许内嵌或加载失败。')
+      })
+      function showOverlay(msg) {
+        ovText.textContent = msg
+        overlay.classList.add('sbr-show')
+      }
+      // 空白窗口提示
+      if (!state.url) {
+        showOverlay('在上方输入网址，回车加载。')
+      }
+
+      position()
+      if (state.addrHidden) el.classList.add('sbr-addr-hidden')
+      document.body.appendChild(el)
+      if (state.minimized) el.style.display = 'none'
+
+      return win
+    }
+
+    return { create: create, normalizeUrl: normalizeUrl }
+  })()
+
   // —— SB.dock：右侧居中图标栏 ——
   SB.dock = (function () {
     var rootEl = null
@@ -110,11 +279,40 @@
       refresh()
     }
 
-    // 占位：Task 3 实现
-    function newWindow() {}
-    function toggleWin(win) {}
+    function newWindow(opts) {
+      if (wins.length >= SB.MAX_WINDOWS) {
+        try { alert('子浏览器窗口数已达上限（' + SB.MAX_WINDOWS + '）') } catch (err) {}
+        return null
+      }
+      var win = SB.window.create(opts || {})
+      wins.push(win)
+      win.focus()
+      refresh()
+      SB.manager.save()
+      return win
+    }
 
-    return { init: init, windows: windows, refresh: refresh, newWindow: newWindow, toggleWin: toggleWin }
+    function toggleWin(win) {
+      if (win.minimized()) win.show()
+      else win.setMinimized(true)
+    }
+
+    function closeWin(win) {
+      var i = wins.indexOf(win)
+      if (i !== -1) wins.splice(i, 1)
+      win.destroy()
+      refresh()
+      SB.manager.save()
+    }
+
+    // 占位：Task 5 实现
+    function save() {}
+
+    return {
+      init: init, windows: windows, refresh: refresh,
+      newWindow: newWindow, toggleWin: toggleWin, closeWin: closeWin,
+      save: save,
+    }
   })()
 
   // —— 页面自检：只在 DSH 主聊天界面初始化 ——
