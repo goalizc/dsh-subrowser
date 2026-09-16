@@ -63,11 +63,18 @@
 
     function create(opts) {
       opts = opts || {}
+      var defW = opts.w || 720
+      var defH = opts.h || 480
+      // 默认位置：视口居中偏上。x/y 缺失（新建窗口）或非有限数时使用默认，
+      // 避免 position() 输出 'undefinedpx' 无效定位导致窗口落到视口外。
+      var defX = Math.max(0, Math.round((window.innerWidth - defW) / 2))
+      var defY = Math.max(0, Math.round((window.innerHeight - defH) / 3))
       var state = {
         id: makeId(),
         url: opts.url || '',
-        x: opts.x, y: opts.y,
-        w: opts.w || 720, h: opts.h || 480,
+        x: isFinite(opts.x) ? opts.x : defX,
+        y: isFinite(opts.y) ? opts.y : defY,
+        w: defW, h: defH,
         minimized: !!opts.minimized,
         addrHidden: !!opts.addrHidden,
       }
