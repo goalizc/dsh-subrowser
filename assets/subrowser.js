@@ -44,6 +44,23 @@
       span.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>'
       return span
     }
+    // 默认图标：内联 SVG 浏览器小图标（未加载网页 / 无 favicon 时使用）
+    var DEFAULT_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+      '<rect x="3" y="6" width="26" height="20" rx="3" fill="none" stroke="%23c9c9d6" stroke-width="2"/>' +
+      '<circle cx="8" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<circle cx="13" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<circle cx="18" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
+      '<path d="M6 17h20v2H6zM6 21h13v2H6z" fill="%23c9c9d6"/></svg>'
+    )
+    // 由 URL 取 favicon 地址（https://host/favicon.ico）；无 URL / 非法 URL 返回空串
+    function faviconUrl(url) {
+      try {
+        var u = new URL(url)
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
+        return u.protocol + '//' + u.hostname + '/favicon.ico'
+      } catch (err) { return '' }
+    }
     function clampWindow(state) {
       var vw = window.innerWidth
       var vh = window.innerHeight
@@ -54,7 +71,7 @@
       state.w = w; state.h = h; state.x = x; state.y = y
       return state
     }
-    return { sbEl: sbEl, sbCss: sbCss, sbIcon: sbIcon, clampWindow: clampWindow }
+    return { sbEl: sbEl, sbCss: sbCss, sbIcon: sbIcon, DEFAULT_ICON: DEFAULT_ICON, faviconUrl: faviconUrl, clampWindow: clampWindow }
   })()
 
   // —— SB.window：单个浏览器窗口 ——
@@ -174,10 +191,83 @@
       var frame = SB.util.sbEl('iframe', 'sbr-frame', body)
       frame.setAttribute('allow', 'clipboard-write; clipboard-read; fullscreen; autoplay')
       var overlay = SB.util.sbEl('div', 'sbr-overlay', body)
-      var ovText = SB.util.sbEl('div', '', overlay, '')
+      // 历史列表容器（空白窗口显示）+ 提示文字（加载失败显示）
+      var histEl = SB.util.sbEl('div', 'sbr-hist', overlay)
+      var ovText = SB.util.sbEl('div', 'sbr-hist-tip', overlay, '')
       function showOverlay(msg) {
+        histEl.style.display = 'none'
         ovText.textContent = msg
         overlay.classList.add('sbr-show')
+      }
+      // 相对时间：刚刚 / N 分钟前 / N 小时前 / 日期
+      function histTime(ts) {
+        if (typeof ts !== 'number') return ''
+        var diff = Date.now() - ts
+        if (diff < 60000) return '刚刚'
+        if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前'
+        if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前'
+        if (diff < 604800000) return Math.floor(diff / 86400000) + ' 天前'
+        var d = new Date(ts)
+        return (d.getMonth() + 1) + '月' + d.getDate() + '日'
+      }
+      // 渲染历史列表（仅空白窗口调用；每次导航后回到空白态时由 navigate 重新展示）
+      function renderHistory() {
+        histEl.style.display = ''
+        ovText.textContent = ''
+        // 清空
+        while (histEl.firstChild) histEl.removeChild(histEl.firstChild)
+        var list = SB.history.all()
+        // 标题行：历史记录 + 清空按钮
+        var head = SB.util.sbEl('div', 'sbr-hist-head', histEl)
+        SB.util.sbEl('div', 'sbr-hist-title', head, '历史记录')
+        if (list.length) {
+          var clearBtn = SB.util.sbEl('button', 'sbr-hist-clear', head, '清空')
+          clearBtn.addEventListener('click', function () {
+            SB.history.clear()
+            renderHistory()
+          })
+        }
+        var listEl = SB.util.sbEl('div', 'sbr-hist-list', histEl)
+        if (!list.length) {
+          SB.util.sbEl('div', 'sbr-hist-empty', listEl, '暂无历史记录，输入网址开始浏览')
+        } else {
+          list.forEach(function (h) {
+            var item = SB.util.sbEl('div', 'sbr-hist-item', listEl)
+            item.addEventListener('click', function () {
+              win.navigate(h.url)
+            })
+            var fav = SB.util.sbEl('img', 'sbr-hist-fav', item)
+            fav.src = SB.util.faviconUrl(h.url) || SB.util.DEFAULT_ICON
+            fav.addEventListener('error', function () { fav.src = SB.util.DEFAULT_ICON })
+            var meta = SB.util.sbEl('div', 'sbr-hist-meta', item)
+            var t = SB.util.sbEl('div', 'sbr-hist-name', meta, labelOf(h.url) || h.url)
+            var urlRow = SB.util.sbEl('div', 'sbr-hist-sub', meta)
+            SB.util.sbEl('span', 'sbr-hist-url', urlRow, h.url)
+            SB.util.sbEl('span', 'sbr-hist-time', urlRow, histTime(h.ts))
+            var del = SB.util.sbEl('button', 'sbr-hist-del', item)
+            del.appendChild(SB.util.sbIcon('close'))
+            del.title = '删除此记录'
+            del.addEventListener('click', function (ev) {
+              ev.stopPropagation()
+              SB.history.remove(h.url)
+              renderHistory()
+            })
+          })
+        }
+        overlay.classList.add('sbr-show')
+      }
+
+      // 探测地址是否可达：用 fetch(no-cors) 判定服务器有响应才记入历史。
+      // no-cors 下拿不到状态码，但 DNS/连接失败会 reject，可过滤打不开的地址。
+      function probeHistory(u) {
+        if (!/^https?:\/\//i.test(u)) return
+        var ctrl = typeof AbortController === 'function' ? new AbortController() : null
+        var timer = setTimeout(function () { if (ctrl) ctrl.abort() }, 8000)
+        var onOk = function () { clearTimeout(timer); SB.history.add(u) }
+        var onErr = function () { clearTimeout(timer) }
+        fetch(u, { method: 'HEAD', mode: 'no-cors', signal: ctrl ? ctrl.signal : undefined })
+          .then(onOk, onErr)
+          .catch(onErr)
       }
 
       // —— 内容缩放：iframe 布局视口 = 容器 / zoom，再 scale(zoom) 填满容器。
@@ -305,6 +395,8 @@
         overlay.classList.remove('sbr-show')
         SB.manager.save()
         SB.manager.refresh()
+        // 探测地址有效性：可达才记入历史（避免记录打不开的地址）
+        probeHistory(u)
       }
       win.show = function () {
         state.minimized = false
@@ -343,9 +435,9 @@
       frame.addEventListener('error', function () {
         showOverlay('该站点不允许内嵌或加载失败。')
       })
-      // 空白窗口提示
+      // 空白窗口：默认显示历史记录列表
       if (!state.url) {
-        showOverlay('在上方输入网址，回车加载。')
+        renderHistory()
       }
 
       position()
@@ -367,24 +459,8 @@
     var rootEl = null
     var plusBtn = null
     var listEl = null
-    // 默认图标：内联 SVG 浏览器小图标（未加载网页 / 无 favicon 时使用）
-    var DEFAULT_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-      '<rect x="3" y="6" width="26" height="20" rx="3" fill="none" stroke="%23c9c9d6" stroke-width="2"/>' +
-      '<circle cx="8" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
-      '<circle cx="13" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
-      '<circle cx="18" cy="11.5" r="1.6" fill="%23c9c9d6"/>' +
-      '<path d="M6 17h20v2H6zM6 21h13v2H6z" fill="%23c9c9d6"/></svg>'
-    )
-
-    // 由窗口 URL 取 favicon 地址（https://host/favicon.ico）；无 URL 返回空串
-    function faviconUrl(url) {
-      try {
-        var u = new URL(url)
-        if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
-        return u.protocol + '//' + u.hostname + '/favicon.ico'
-      } catch (err) { return '' }
-    }
+    var DEFAULT_ICON = SB.util.DEFAULT_ICON
+    var faviconUrl = SB.util.faviconUrl
 
     function init() {
       rootEl = SB.util.sbEl('div', 'sbr-dock')
@@ -459,6 +535,55 @@
     return { init: init, refresh: refresh }
   })()
 
+  // —— SB.history：访问历史（localStorage 持久化，最近优先，上限 50）——
+  SB.history = (function () {
+    var KEY = 'dsh-subrowser:history:v1'
+    var MAX = 50
+    var list = null // [{ url, ts }]，list[0] 最新
+
+    function load() {
+      if (list) return list
+      list = []
+      try {
+        var raw = localStorage.getItem(KEY)
+        if (raw) {
+          var data = JSON.parse(raw)
+          if (Array.isArray(data)) list = data.filter(function (h) {
+            return h && typeof h.url === 'string' && typeof h.ts === 'number'
+          })
+        }
+      } catch (err) {}
+      return list
+    }
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(list)) } catch (err) {}
+    }
+    function all() { return load().slice() }
+    // 加入（去重置顶，超限淘汰最旧）
+    function add(url) {
+      load()
+      var i = -1
+      for (var k = 0; k < list.length; k++) { if (list[k].url === url) { i = k; break } }
+      if (i !== -1) list.splice(i, 1)
+      list.unshift({ url: url, ts: Date.now() })
+      if (list.length > MAX) list.length = MAX
+      save()
+    }
+    function remove(url) {
+      load()
+      for (var k = list.length - 1; k >= 0; k--) {
+        if (list[k].url === url) list.splice(k, 1)
+      }
+      save()
+    }
+    function clear() {
+      list = []
+      save()
+    }
+
+    return { all: all, add: add, remove: remove, clear: clear }
+  })()
+
   // —— SB.manager：窗口生命周期（Task 3 起实现窗口创建）——
   SB.manager = (function () {
     var wins = []
@@ -504,8 +629,29 @@
         // color-scheme:dark 使 iframe 内未显式设置样式的滚动条/表单控件
         // 按暗色渲染（浏览器标准行为，跨域安全，无需访问 iframe 内容）
         '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517;color-scheme:dark}',
-        '.sbr-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#151517;color:#e8e8f0;font-size:14px;text-align:center;padding:20px;box-sizing:border-box}',
+        '.sbr-overlay{position:absolute;inset:0;display:none;flex-direction:column;background:#151517;color:#e8e8f0;font-size:14px;box-sizing:border-box}',
         '.sbr-overlay.sbr-show{display:flex}',
+        // 提示文字（加载失败/错误提示，居中）
+        '.sbr-hist-tip{display:flex;align-items:center;justify-content:center;flex:1 1 auto;text-align:center;padding:20px;box-sizing:border-box;color:#8a8a96}',
+        // 历史记录列表（空白窗口默认页）
+        '.sbr-hist{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}',
+        '.sbr-hist-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08)}',
+        '.sbr-hist-title{font-size:13px;font-weight:600;color:#f9fafb}',
+        '.sbr-hist-clear{flex:0 0 auto;border:0;border-radius:6px;padding:4px 10px;background:rgba(255,255,255,.08);color:#cfcfe0;font-size:12px;cursor:pointer;transition:background .12s ease}',
+        '.sbr-hist-clear:hover{background:rgba(255,95,87,.25);color:#ff8a80}',
+        '.sbr-hist-list{flex:1 1 auto;overflow-y:auto;padding:6px 8px;scrollbar-width:none;-ms-overflow-style:none}',
+        '.sbr-hist-list::-webkit-scrollbar{display:none}',
+        '.sbr-hist-empty{color:#8a8a96;font-size:13px;text-align:center;padding:32px 12px}',
+        '.sbr-hist-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .12s ease}',
+        '.sbr-hist-item:hover{background:rgba(255,255,255,.06)}',
+        '.sbr-hist-fav{width:20px;height:20px;object-fit:contain;flex:0 0 auto}',
+        '.sbr-hist-meta{flex:1 1 auto;min-width:0}',
+        '.sbr-hist-name{font-size:13px;color:#f9fafb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.sbr-hist-sub{display:flex;align-items:baseline;gap:8px;min-width:0}',
+        '.sbr-hist-url{font-size:11px;color:#a0a0b0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.sbr-hist-time{flex:0 0 auto;font-size:11px;color:#6e6e7e}',
+        '.sbr-hist-del{flex:0 0 auto;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#8a8a96;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s ease,color .12s ease;padding:0}',
+        '.sbr-hist-del:hover{background:rgba(255,95,87,.18);color:#ff5f57}',
         // 缩放句柄（位于窗口内部边缘，避免被 .sbr-win 的 overflow:hidden 裁剪；
         // z-index:1 低于标题栏的 2，保证标题栏按钮/圆点可点）
         '.sbr-nw,.sbr-n,.sbr-ne,.sbr-e,.sbr-se,.sbr-s,.sbr-sw,.sbr-w{position:absolute;z-index:1}',
