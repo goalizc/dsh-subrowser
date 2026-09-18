@@ -99,9 +99,6 @@
       } catch (err) { return '' }
     }
 
-    // 隐藏滚动条的加宽/加高量（px）：滚动条宽度一般 15~17px，取 20 保证完全溢出
-    var SB_HIDE_PX = 20
-
     function create(opts) {
       opts = opts || {}
       var defW = opts.w || 400
@@ -272,15 +269,12 @@
 
       // —— 内容缩放：iframe 布局视口 = 容器 / zoom，再 scale(zoom) 填满容器。
       // 容器 overflow:hidden 裁剪，效果等同浏览器内容缩放（放大文字/图片）。
-      // 隐藏滚动条：iframe 加宽/加高 SB_HIDE_PX，让页面垂直/水平滚动条溢出
-      // 到容器外被裁剪。跨域 iframe 无法直接改内部滚动条样式，此为唯一可行
-      // 方案；代价是页面右侧/底部最多 SB_HIDE_PX 的边缘内容不可见。
       function applyZoom() {
         var z = state.zoom
         var cw = body.clientWidth || 1
         var ch = body.clientHeight || 1
-        frame.style.width = Math.round((cw + SB_HIDE_PX) / z) + 'px'
-        frame.style.height = Math.round((ch + SB_HIDE_PX) / z) + 'px'
+        frame.style.width = Math.round(cw / z) + 'px'
+        frame.style.height = Math.round(ch / z) + 'px'
         frame.style.transform = 'scale(' + z + ')'
         frame.style.transformOrigin = '0 0'
       }
