@@ -34,9 +34,11 @@
       minimize: '<path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
       // 关闭：X
       close: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      // 放大 / 缩小：放大镜 + 加/减号
-      zoom_in: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-      zoom_out: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M21 21l-4.35-4.35M8 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      // 箭头：复刻首版等腰三角形（高 7 半底 6），整体平移到 viewBox 中心（y=12）保证居中
+      arr_up: '<path d="M12 8.5l6 7H6z" fill="currentColor"/>',
+      arr_down: '<path d="M12 15.5l6-7H6z" fill="currentColor"/>',
+      arr_left: '<path d="M8.5 12l7 6V6z" fill="currentColor"/>',
+      arr_right: '<path d="M15.5 12l-7 6V6z" fill="currentColor"/>',
     }
     function sbIcon(name) {
       var span = document.createElement('span')
@@ -114,8 +116,10 @@
         x: isFinite(opts.x) ? opts.x : defX,
         y: isFinite(opts.y) ? opts.y : defY,
         w: defW, h: defH,
-        // 内容缩放倍率（1 = 100%），范围 0.5 ~ 2
-        zoom: Math.max(0.5, Math.min(2, isFinite(opts.zoom) ? opts.zoom : 1)),
+        // 滚动条隐藏：hideV = 垂直方向溢出（高度拉伸，隐藏底部水平滚动条），
+        // hideH = 水平方向溢出（宽度拉伸，隐藏右侧垂直滚动条）。默认 0 = 不隐藏。
+        hideV: Math.max(0, Math.min(24, isFinite(opts.hideV) ? opts.hideV : 0)),
+        hideH: Math.max(0, Math.min(24, isFinite(opts.hideH) ? opts.hideH : 0)),
         minimized: !!opts.minimized,
         addrHidden: !!opts.addrHidden,
       }
@@ -128,7 +132,8 @@
       ;['sbr-dot-1', 'sbr-dot-2', 'sbr-dot-3'].forEach(function (c) {
         SB.util.sbEl('div', 'sbr-dot ' + c, dots)
       })
-      var addr = SB.util.sbEl('input', 'sbr-addr', bar)
+      var addrWrap = SB.util.sbEl('div', 'sbr-addr-wrap', bar)
+      var addr = SB.util.sbEl('input', 'sbr-addr', addrWrap)
       addr.type = 'text'
       addr.placeholder = '输入网址，回车打开'
       addr.value = state.url
@@ -146,24 +151,36 @@
         }
       })
       var barBtns = SB.util.sbEl('div', 'sbr-bar-btns', bar)
-      // 内容缩放控制：iframe 内容按 state.zoom 缩放（0.5x ~ 2x）
-      var btnZoomOut = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
-      btnZoomOut.appendChild(SB.util.sbIcon('zoom_out'))
-      btnZoomOut.title = '缩小内容'
-      btnZoomOut.addEventListener('click', function () {
-        state.zoom = Math.max(0.5, Math.round((state.zoom - 0.1) * 10) / 10)
-        applyZoom()
-        SB.manager.save()
+      // 垂直滚动条隐藏控制（上增下减）
+      var vGroup = SB.util.sbEl('div', 'sbr-ctrl-grp', barBtns)
+      var btnVUp = SB.util.sbEl('button', 'sbr-bar-btn', vGroup)
+      btnVUp.appendChild(SB.util.sbIcon('arr_up'))
+      btnVUp.title = '增加垂直溢出（隐藏滚动条）'
+      btnVUp.addEventListener('click', function () {
+        state.hideV = Math.min(24, state.hideV + 1); applyHide(); SB.manager.save()
       })
-      var btnZoomIn = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
-      btnZoomIn.appendChild(SB.util.sbIcon('zoom_in'))
-      btnZoomIn.title = '放大内容'
-      btnZoomIn.addEventListener('click', function () {
-        state.zoom = Math.min(2, Math.round((state.zoom + 0.1) * 10) / 10)
-        applyZoom()
-        SB.manager.save()
+      var btnVDn = SB.util.sbEl('button', 'sbr-bar-btn', vGroup)
+      btnVDn.appendChild(SB.util.sbIcon('arr_down'))
+      btnVDn.title = '减少垂直溢出（显示滚动条）'
+      btnVDn.addEventListener('click', function () {
+        state.hideV = Math.max(0, state.hideV - 1); applyHide(); SB.manager.save()
       })
-      var btnHide = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
+      // 水平滚动条隐藏控制（左减右增），横排布局
+      var hGroup = SB.util.sbEl('div', 'sbr-ctrl-grp sbr-ctrl-h', barBtns)
+      var btnHLeft = SB.util.sbEl('button', 'sbr-bar-btn', hGroup)
+      btnHLeft.appendChild(SB.util.sbIcon('arr_left'))
+      btnHLeft.title = '减少水平溢出（显示滚动条）'
+      btnHLeft.addEventListener('click', function () {
+        state.hideH = Math.max(0, state.hideH - 1); applyHide(); SB.manager.save()
+      })
+      var btnHRight = SB.util.sbEl('button', 'sbr-bar-btn', hGroup)
+      btnHRight.appendChild(SB.util.sbIcon('arr_right'))
+      btnHRight.title = '增加水平溢出（隐藏滚动条）'
+      btnHRight.addEventListener('click', function () {
+        state.hideH = Math.min(24, state.hideH + 1); applyHide(); SB.manager.save()
+      })
+      // 折叠地址栏按钮：放在地址栏右侧（折叠时按钮保留，可点击展开）
+      var btnHide = SB.util.sbEl('button', 'sbr-bar-btn sbr-fold-btn', addrWrap)
       var hideIcon = SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold')
       btnHide.appendChild(hideIcon)
       btnHide.title = state.addrHidden ? '展开地址栏' : '折叠地址栏'
@@ -267,19 +284,15 @@
           .catch(onErr)
       }
 
-      // —— 内容缩放：iframe 布局视口 = 容器 / zoom，再 scale(zoom) 填满容器。
-      // 容器 overflow:hidden 裁剪，效果等同浏览器内容缩放（放大文字/图片）。
-      function applyZoom() {
-        var z = state.zoom
-        var cw = body.clientWidth || 1
-        var ch = body.clientHeight || 1
-        frame.style.width = Math.round(cw / z) + 'px'
-        frame.style.height = Math.round(ch / z) + 'px'
-        frame.style.transform = 'scale(' + z + ')'
-        frame.style.transformOrigin = '0 0'
+      // —— 滚动条隐藏：hideV = 垂直方向溢出（高度拉伸，隐藏底部水平滚动条），
+      // hideH = 水平方向溢出（宽度拉伸，隐藏右侧垂直滚动条）。
+      // iframe 左上角不动，右/下边缘连同滚动条一起溢出，被 .sbr-body overflow:hidden 裁剪。
+      function applyHide() {
+        frame.style.width = (body.clientWidth + (state.hideH || 0)) + 'px'
+        frame.style.height = (body.clientHeight + (state.hideV || 0)) + 'px'
       }
-      // 窗口被拖拽缩放时 body 尺寸变化，自动跟随重算
-      var bodyObserver = new ResizeObserver(function () { applyZoom() })
+      // 窗口拖拽缩放时 body 尺寸变化，自动跟随重算
+      var bodyObserver = new ResizeObserver(function () { applyHide() })
       bodyObserver.observe(body)
 
       // —— 缩放句柄（Task 4 挂拖拽逻辑）——
@@ -290,7 +303,7 @@
       // —— 拖拽：按住标题栏空白区（非地址栏/按钮）移动窗口 ——
       var dragStart = null
       function isInteractive(target) {
-        return !!(target && (target === addr || target.closest('.sbr-bar-btns')))
+        return !!(target && (target === addr || target.closest('.sbr-addr-wrap, .sbr-bar-btns')))
       }
       bar.addEventListener('pointerdown', function (ev) {
         if (isInteractive(ev.target)) return
@@ -438,7 +451,7 @@
       if (state.addrHidden) el.classList.add('sbr-addr-hidden')
       document.body.appendChild(el)
       if (state.minimized) el.style.display = 'none'
-      applyZoom() // 初始按 state.zoom 缩放内容
+      applyHide() // 初始应用滚动条隐藏值
       // 空白新窗口：自动聚焦地址栏（必须在挂载到 DOM 之后，否则 focus 是空操作）
       if (!state.url && !state.minimized) addr.focus()
 
@@ -608,13 +621,20 @@
         '.sbr-bar-dots{display:flex;gap:4px;padding:0 2px;pointer-events:none}',
         '.sbr-dot{width:10px;height:10px;border-radius:50%}',
         '.sbr-dot-1{background:#ff5f57}.sbr-dot-2{background:#febc2e}.sbr-dot-3{background:#28c840}',
+        '.sbr-addr-wrap{flex:1 1 auto;display:flex;align-items:center;gap:4px;min-width:0}',
         '.sbr-addr{flex:1 1 auto;min-width:60px;height:24px;border:0;border-radius:6px;padding:0 8px;background:rgba(0,0,0,.28);color:#f9fafb;font-size:12px;outline:none;box-sizing:border-box}',
         '.sbr-addr.sbr-err{border:1px solid #ff5f57}',
-        // 折叠地址栏：用 visibility 隐藏而非 display:none，保留 flex 占位，
-        // 右侧按钮区位置不随之移动（问题：display:none 会让按钮左移）
+        // 折叠地址栏：仅隐藏 input（visibility 保留占位），右侧折叠按钮保留可点击展开
         '.sbr-win.sbr-addr-hidden .sbr-addr{visibility:hidden}',
         '.sbr-bar-btns{display:flex;gap:4px;flex:0 0 auto;align-items:center}',
-        '.sbr-bar-btn{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#cfcfe0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;padding:0}',
+        // 滚动条隐藏双按钮组：整体 24×24 与普通按钮同尺寸，
+        // 垂直组上下各 12px，水平组左右各 12px，inset 阴影描边不占布局尺寸
+        '.sbr-ctrl-grp{display:flex;flex-direction:column;gap:0;width:24px;height:24px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);border-radius:6px;overflow:hidden}',
+        '.sbr-ctrl-grp.sbr-ctrl-h{flex-direction:row}',
+        '.sbr-ctrl-grp .sbr-bar-btn{width:24px;height:12px;border:0;border-radius:0;box-sizing:border-box;line-height:0;display:flex;align-items:center;justify-content:center}',
+        '.sbr-ctrl-grp.sbr-ctrl-h .sbr-bar-btn{width:12px;height:24px}',
+        '.sbr-ctrl-grp .sbr-ico svg{width:10px;height:10px}',
+        '.sbr-bar-btn{width:24px;height:24px;border:1px solid rgba(255,255,255,.12);border-radius:6px;background:transparent;color:#cfcfe0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s ease;padding:0;box-sizing:border-box}',
         '.sbr-bar-btn:hover{background:rgba(255,255,255,.14)}',
         '.sbr-bar-btn.sbr-close:hover{background:#ff5f57;color:#fff}',
         '.sbr-ico{display:inline-flex;align-items:center;justify-content:center;pointer-events:none}',
@@ -622,6 +642,8 @@
         '.sbr-body{flex:1 1 auto;position:relative;background:#151517;overflow:hidden}',
         // color-scheme:dark 使 iframe 内未显式设置样式的滚动条/表单控件
         // 按暗色渲染（浏览器标准行为，跨域安全，无需访问 iframe 内容）
+        // 显式 width/height:100% 覆盖 iframe UA 默认 300×150（否则绝对定位下 right
+        // 拉伸被 UA width 覆盖，内容只渲染 300px 宽）；滚动条隐藏用 transform 平移溢出
         '.sbr-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#151517;color-scheme:dark}',
         '.sbr-overlay{position:absolute;inset:0;display:none;flex-direction:column;background:#151517;color:#e8e8f0;font-size:14px;box-sizing:border-box}',
         '.sbr-overlay.sbr-show{display:flex}',
@@ -712,7 +734,7 @@
       try {
         var data = { v: 1, dockY: dockY, windows: wins.map(function (w) {
           var s = w.state
-          return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, zoom: s.zoom, minimized: s.minimized, addrHidden: s.addrHidden }
+          return { id: s.id, url: s.url, x: s.x, y: s.y, w: s.w, h: s.h, hideV: s.hideV, hideH: s.hideH, minimized: s.minimized, addrHidden: s.addrHidden }
         }) }
         localStorage.setItem(SB.STORAGE_KEY, JSON.stringify(data))
       } catch (err) {}
@@ -740,7 +762,7 @@
           url: typeof rec.url === 'string' ? rec.url : '',
           x: Number(rec.x), y: Number(rec.y),
           w: Number(rec.w), h: Number(rec.h),
-          zoom: Number(rec.zoom),
+          hideV: Number(rec.hideV), hideH: Number(rec.hideH),
           minimized: false, // 设计文档 6.2：刷新一律显示
           addrHidden: !!rec.addrHidden,
         })
