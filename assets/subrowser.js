@@ -407,7 +407,8 @@
       }
       win.show = function () {
         state.minimized = false
-        el.style.display = ''
+        // visibility 隐藏恢复：保留布局，iframe 滚动位置不丢失
+        el.classList.remove('sbr-min')
         position()
         win.focus()
         SB.manager.save()
@@ -415,7 +416,9 @@
       }
       win.setMinimized = function (b) {
         state.minimized = b
-        el.style.display = b ? 'none' : ''
+        // 用 visibility 而非 display:none：display 会脱离布局树，
+        // 恢复时 iframe 滚动位置被浏览器重置回顶部
+        el.classList.toggle('sbr-min', b)
         if (!b) win.focus()
         SB.manager.save()
         SB.manager.refresh()
@@ -450,7 +453,7 @@
       position()
       if (state.addrHidden) el.classList.add('sbr-addr-hidden')
       document.body.appendChild(el)
-      if (state.minimized) el.style.display = 'none'
+      if (state.minimized) el.classList.add('sbr-min')
       applyHide() // 初始应用滚动条隐藏值
       // 空白新窗口：自动聚焦地址栏（必须在挂载到 DOM 之后，否则 focus 是空操作）
       if (!state.url && !state.minimized) addr.focus()
@@ -616,6 +619,9 @@
         // —— 浏览器窗口（深色主题，与 DSH 一致）——
         '.sbr-win{position:fixed;z-index:9990;min-width:240px;min-height:180px;display:flex;flex-direction:column;border-radius:10px;background:#151517;border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden;font-family:inherit}',
         '.sbr-win.sbr-top{z-index:9997}',
+        // 最小化：visibility 隐藏保留布局（display:none 会丢 iframe 滚动位置），
+        // pointer-events 关闭保证不可交互、不遮挡点击
+        '.sbr-win.sbr-min{visibility:hidden;pointer-events:none}',
         '.sbr-bar{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(255,255,255,.06);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;position:relative;z-index:2}',
         '.sbr-bar.sbr-dragging{cursor:grabbing}',
         '.sbr-bar-dots{display:flex;gap:4px;padding:0 2px;pointer-events:none}',
