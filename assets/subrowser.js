@@ -184,13 +184,17 @@
       var hideIcon = SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold')
       btnHide.appendChild(hideIcon)
       btnHide.title = state.addrHidden ? '展开地址栏' : '折叠地址栏'
-      btnHide.addEventListener('click', function () {
-        state.addrHidden = !state.addrHidden
-        el.classList.toggle('sbr-addr-hidden', state.addrHidden)
+      // 统一设置地址栏隐藏状态（按钮点击 / 页面加载成功自动隐藏共用）
+      function setAddrHidden(b) {
+        state.addrHidden = b
+        el.classList.toggle('sbr-addr-hidden', b)
         btnHide.innerHTML = ''
-        btnHide.appendChild(SB.util.sbIcon(state.addrHidden ? 'unfold' : 'fold'))
-        btnHide.title = state.addrHidden ? '展开地址栏' : '折叠地址栏'
+        btnHide.appendChild(SB.util.sbIcon(b ? 'unfold' : 'fold'))
+        btnHide.title = b ? '展开地址栏' : '折叠地址栏'
         SB.manager.save()
+      }
+      btnHide.addEventListener('click', function () {
+        setAddrHidden(!state.addrHidden)
       })
       var btnMin = SB.util.sbEl('button', 'sbr-bar-btn', barBtns)
       btnMin.appendChild(SB.util.sbIcon('minimize'))
@@ -302,8 +306,11 @@
 
       // —— 拖拽：按住标题栏空白区（非地址栏/按钮）移动窗口 ——
       var dragStart = null
+      // 交互区判定：仅地址栏 input、折叠按钮、右侧工具按钮为不可拖拽的交互点。
+      // 不能排除整个 .sbr-addr-wrap——地址栏隐藏（visibility:hidden）后点击会穿透
+      // 到 wrap，若视 wrap 为交互区则隐藏后地址栏整段位置无法拖拽窗口。
       function isInteractive(target) {
-        return !!(target && (target === addr || target.closest('.sbr-addr-wrap, .sbr-bar-btns')))
+        return !!(target && (target === addr || target.closest('.sbr-fold-btn, .sbr-bar-btns')))
       }
       bar.addEventListener('pointerdown', function (ev) {
         if (isInteractive(ev.target)) return
@@ -444,6 +451,10 @@
       // iframe 加载失败提示（load 事件仍会触发，用跨域访问检测不可行）
       frame.addEventListener('error', function () {
         showOverlay('该站点不允许内嵌或加载失败。')
+      })
+      // 页面打开成功自动隐藏地址栏（空白窗口 state.url 为空则不隐藏）
+      frame.addEventListener('load', function () {
+        if (state.url && !state.addrHidden) setAddrHidden(true)
       })
       // 空白窗口：默认显示历史记录列表
       if (!state.url) {
