@@ -1,4 +1,4 @@
-# dsh-subrowser
+# @goalizc/dsh-subrowser
 
 DSH（DeepSeek Harness）Web 界面内的浮动子浏览器插件。在主聊天页内打开多个可拖拽、可缩放、可最小化的 iframe 浏览器窗口，通过右侧图标栏统一管理，支持内容缩放与状态持久化。
 
@@ -35,7 +35,7 @@ dsh plugin --profile web add link:.
 ### 卸载
 
 ```powershell
-dsh plugin --profile web remove dsh-subrowser
+dsh plugin --profile web remove @goalizc/dsh-subrowser
 ```
 
 ## 使用说明
