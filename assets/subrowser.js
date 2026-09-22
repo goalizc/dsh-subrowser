@@ -3,7 +3,7 @@
   window.__dshSubrowser = true
 
   var SB = window.SB = {}
-  SB.v = '0.1.0'
+  SB.v = '1.0.0'
   SB.STORAGE_KEY = 'dsh-subrowser:v1'
   SB.MAX_WINDOWS = 8
   SB.MIN_W = 240

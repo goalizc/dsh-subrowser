@@ -1,6 +1,6 @@
 {
   "name": "dsh-subrowser",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DSH Web 界面内的浮动子浏览器：多窗口 iframe、拖拽缩放、右侧图标栏、内容缩放、Esc 全局显隐、localStorage 持久化",
   "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "browser", "widget"],
   "type": "module",
